@@ -25,8 +25,7 @@ def create_scorecard_excel(
     Returns: BytesIO buffer with Excel file
     """
     output = BytesIO()
-    
-    workbook = xlsxwriter.Workbook(output, {'in_memory': True})
+    workbook = xlsxwriter.Workbook(output, {'in_memory': True, 'nan_inf_to_errors': True})
     
     # Define formats
     header_format = workbook.add_format({
@@ -529,8 +528,15 @@ def create_consolidated_excel(
     Create consolidated Excel report with all tests in columns.
     Matches the reference format with totals and averages.
     """
+    def safe_int(val):
+        try:
+            if pd.isna(val): return 0
+            return int(float(val))
+        except (ValueError, TypeError):
+            return 0
+            
     output = BytesIO()
-    workbook = xlsxwriter.Workbook(output, {'in_memory': True})
+    workbook = xlsxwriter.Workbook(output, {'in_memory': True, 'nan_inf_to_errors': True})
     
     sheet_name = f"{class_name} {section}"[:31]
     worksheet = workbook.add_worksheet(sheet_name)
@@ -649,17 +655,17 @@ def create_consolidated_excel(
         for test_date in test_dates:
             if test_date in tests:
                 test_data = tests[test_date]
-                phy = test_data.get('physics', 0)
-                chem = test_data.get('chemistry', 0)
-                maths = test_data.get('maths', 0)
-                bio = test_data.get('biology', 0)
-                total = test_data.get('total', 0)
+                phy = safe_int(test_data.get('physics', 0))
+                chem = safe_int(test_data.get('chemistry', 0))
+                maths = safe_int(test_data.get('maths', 0))
+                bio = safe_int(test_data.get('biology', 0))
+                total = safe_int(test_data.get('total', 0))
                 
-                worksheet.write(row, col, int(phy), cell_format)
-                worksheet.write(row, col + 1, int(chem), cell_format)
-                worksheet.write(row, col + 2, int(maths), cell_format)
-                worksheet.write(row, col + 3, int(bio), cell_format)
-                worksheet.write(row, col + 4, int(total), cell_format)
+                worksheet.write(row, col, phy, cell_format)
+                worksheet.write(row, col + 1, chem, cell_format)
+                worksheet.write(row, col + 2, maths, cell_format)
+                worksheet.write(row, col + 3, bio, cell_format)
+                worksheet.write(row, col + 4, total, cell_format)
                 
                 total_phy += phy
                 total_chem += chem
@@ -674,11 +680,11 @@ def create_consolidated_excel(
             col += 5
         
         # Total marks
-        worksheet.write(row, col, int(total_phy), total_format)
-        worksheet.write(row, col + 1, int(total_chem), total_format)
-        worksheet.write(row, col + 2, int(total_maths), total_format)
-        worksheet.write(row, col + 3, int(total_bio), total_format)
-        worksheet.write(row, col + 4, int(total_total), total_format)
+        worksheet.write(row, col, total_phy, total_format)
+        worksheet.write(row, col + 1, total_chem, total_format)
+        worksheet.write(row, col + 2, total_maths, total_format)
+        worksheet.write(row, col + 3, total_bio, total_format)
+        worksheet.write(row, col + 4, total_total, total_format)
         col += 5
         
         # Averages

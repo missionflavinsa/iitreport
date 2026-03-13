@@ -66,7 +66,7 @@ def read_single_sheet(df_raw: pd.DataFrame) -> Optional[pd.DataFrame]:
         if col_lower in seen:
             # Duplicate found - the standard column order is: Sr.No, ID, Name, Phy, Chem, Maths, Bio, Total
             # If 'phy' appears twice, the second one (after Maths) is likely 'Bio'
-            if col_lower == 'phy' or col_lower == 'physics':
+            if 'phy' in col_lower:
                 cols[i] = 'Bio'
             else:
                 cols[i] = f'{col}_2'
@@ -91,15 +91,15 @@ def read_single_sheet(df_raw: pd.DataFrame) -> Optional[pd.DataFrame]:
             # Matches: "Candidate ID", "CANDIDATE ID", etc.
             # If 'name' wasn't found, assume it's the ID column
             column_mapping[col] = 'candidate_id'
-        elif col_str == 'phy' or 'physics' in col_str:
+        elif 'phy' in col_str:
             column_mapping[col] = 'physics'
-        elif col_str == 'chem' or 'chemistry' in col_str:
+        elif 'chem' in col_str:
             column_mapping[col] = 'chemistry'
-        elif col_str in ['maths', 'math'] or 'mathematics' in col_str:
+        elif 'math' in col_str:
             column_mapping[col] = 'maths'
-        elif col_str == 'bio' or 'biology' in col_str:
+        elif 'bio' in col_str:
             column_mapping[col] = 'biology'
-        elif col_str == 'total':
+        elif 'total' in col_str:
             column_mapping[col] = 'total'
     
     df = df.rename(columns=column_mapping)
@@ -146,7 +146,7 @@ def read_excel_file(file_content: bytes, filename: str) -> Tuple[pd.DataFrame, s
     file_buffer = BytesIO(file_content) if isinstance(file_content, bytes) else file_content
     
     try:
-        xl = pd.ExcelFile(file_buffer)
+        xl = pd.ExcelFile(file_buffer, engine='openpyxl')
     except Exception as e:
         raise ValueError(f"Cannot read Excel file: {str(e)}")
     
