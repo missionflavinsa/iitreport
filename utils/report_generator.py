@@ -127,18 +127,30 @@ def create_scorecard_excel(
         for test_date in test_dates:
             if test_date in tests:
                 test_data = tests[test_date]
-                worksheet.write(row, 0, test_date, cell_format)
-                worksheet.write(row, 1, test_data.get('physics', 0), cell_format)
-                worksheet.write(row, 2, test_data.get('chemistry', 0), cell_format)
-                worksheet.write(row, 3, test_data.get('maths', 0), cell_format)
-                worksheet.write(row, 4, test_data.get('biology', 0), cell_format)
-                worksheet.write(row, 5, test_data.get('total', 0), cell_format)
+                phy = test_data.get('physics', 0)
+                chem = test_data.get('chemistry', 0)
+                maths = test_data.get('maths', 0)
+                bio = test_data.get('biology', 0)
+                total = test_data.get('total', 0)
                 
-                physics_scores.append(test_data.get('physics', 0))
-                chemistry_scores.append(test_data.get('chemistry', 0))
-                maths_scores.append(test_data.get('maths', 0))
-                biology_scores.append(test_data.get('biology', 0))
-                total_scores.append(test_data.get('total', 0))
+                marks = [phy, chem, maths, bio, total]
+                if all(m == 0 for m in marks):
+                    display_marks = ["AB"] * 5
+                else:
+                    display_marks = marks
+                    
+                worksheet.write(row, 0, test_date, cell_format)
+                worksheet.write(row, 1, display_marks[0], cell_format)
+                worksheet.write(row, 2, display_marks[1], cell_format)
+                worksheet.write(row, 3, display_marks[2], cell_format)
+                worksheet.write(row, 4, display_marks[3], cell_format)
+                worksheet.write(row, 5, display_marks[4], cell_format)
+                
+                physics_scores.append(phy)
+                chemistry_scores.append(chem)
+                maths_scores.append(maths)
+                biology_scores.append(bio)
+                total_scores.append(total)
                 
                 row += 1
         
@@ -276,7 +288,7 @@ def create_word_report_cards(
     if class_name.upper().strip() == 'IX':
         template_path = os.path.join(base_dir, 'IX_Report_Cards.docx')
     else:
-        template_path = os.path.join(base_dir, 'Report_Cards.docx')
+        template_path = os.path.join(base_dir, 'VII_VIII_Report_Cards.docx')
     
     if not os.path.exists(template_path):
         raise FileNotFoundError(f"Template not found: {template_path}")
@@ -286,20 +298,23 @@ def create_word_report_cards(
     
     def normalize_date(date_str):
         """
-        Normalize date string to DD/MM/YYYY format for comparison.
-        Handles formats: DD.MM.YYYY, DD-MM-YYYY, DD/MM/YYYY, DD.MM.YY
+        Normalize date string strictly to DD/MM/YYYY format for accurate comparison.
+        Robustly handles zero-padding and mixed separators using Pandas.
         """
-        if not date_str or date_str == 'Unknown':
+        if not date_str or date_str == 'Unknown' or date_str == '-':
             return None
         date_str = str(date_str).strip()
-        # Replace separators with /
-        normalized = re.sub(r'[.\-_]', '/', date_str)
-        # Handle 2-digit year (YY -> 20YY)
-        parts = normalized.split('/')
-        if len(parts) == 3 and len(parts[2]) == 2:
-            parts[2] = '20' + parts[2]
-            normalized = '/'.join(parts)
-        return normalized
+        import pandas as pd
+        try:
+            # Replace common separators with / to standardize for parser
+            clean_str = re.sub(r'[.\-_]', '/', date_str)
+            
+            # Parse strictly assuming day comes first (Indian format)
+            dt = pd.to_datetime(clean_str, dayfirst=True)
+            return dt.strftime('%d/%m/%Y')
+        except Exception:
+            # Fallback for completely unparseable junk syntax
+            return date_str
     
     def extract_template_dates(table, is_ix_template):
         """
@@ -314,7 +329,7 @@ def create_word_report_cards(
         if is_ix_template:
             data_rows = range(4, 11)  # Rows 4-10 (7 rows)
         else:
-            data_rows = range(4, 9)   # Rows 4-8 (5 rows)
+            data_rows = range(4, 10)  # Rows 4-9 (6 rows) for new VII/VIII template
         
         for row_idx in data_rows:
             if row_idx >= len(table.rows):
@@ -394,13 +409,24 @@ def create_word_report_cards(
                                     run.text = text[:-remove]
                                     spaces_to_remove -= remove
                         
-                        # Handle Cleanup of IX Template artifacts
-                        # The IX template has 'Michael Faraday' in subsequent runs
-                        elif is_ix_template and 'Michael Faraday' in text:
+                        # Handle Cleanup of Template artifacts
+                        # The templates may have 'Michael Faraday' in subsequent runs as a placeholder
+                        elif 'Michael Faraday' in text:
+                            run.text = ""
+                        elif text.strip() in ['-', '–', '—', '_']:
                             run.text = ""
         
+        def safe_int(val):
+            import pandas as pd
+            try:
+                if pd.isna(val): return 0
+                return int(float(val))
+            except (ValueError, TypeError):
+                return 0
+
         # Fill marks in data rows where dates match
         for (row_idx, col_offset), template_date in template_dates.items():
+            row = table.rows[row_idx]
             # Check if we have data for this template date
             excel_date_key = None
             for excel_norm, excel_orig in normalized_excel_dates.items():
@@ -410,33 +436,54 @@ def create_word_report_cards(
             
             if excel_date_key and excel_date_key in student_tests:
                 test_data = student_tests[excel_date_key]
-                row = table.rows[row_idx]
                 
                 # Fill marks in columns: Phy(2), Chem(3), Maths(4), Bio(5), Total(6)
                 # For right side, add col_offset (8) to get: Phy(10), Chem(11), Maths(12), Bio(13), Total(14)
                 marks = [
-                    int(test_data.get('physics', 0)),
-                    int(test_data.get('chemistry', 0)),
-                    int(test_data.get('maths', 0)),
-                    int(test_data.get('biology', 0)),
-                    int(test_data.get('total', 0))
+                    safe_int(test_data.get('physics', 0)),
+                    safe_int(test_data.get('chemistry', 0)),
+                    safe_int(test_data.get('maths', 0)),
+                    safe_int(test_data.get('biology', 0)),
+                    safe_int(test_data.get('total', 0))
                 ]
                 
-                for i, mark in enumerate(marks):
+                # If all subjects and total are 0, mark as Absent ("AB")
+                if all(m == 0 for m in marks):
+                    display_marks = ["AB"] * 5
+                else:
+                    display_marks = [str(m) for m in marks]
+                
+                for i, mark_text in enumerate(display_marks):
                     cell_idx = col_offset + 2 + i  # +2 because col 0=Test No, col 1=Date
                     if cell_idx < len(row.cells):
                         cell = row.cells[cell_idx]
                         # Clear existing text and set new value
                         for para in cell.paragraphs:
                             for run in para.runs:
-                                run.text = str(mark)
+                                run.text = mark_text
                                 break
                             else:
                                 # No runs exist, create one with the value
                                 if para.runs:
-                                    para.runs[0].text = str(mark)
+                                    para.runs[0].text = mark_text
                                 else:
-                                    para.add_run(str(mark))
+                                    para.add_run(mark_text)
+                            break
+            else:
+                # Fallback if no test data exists for this template date at all (fill with dashes)
+                for i in range(5):
+                    cell_idx = col_offset + 2 + i  # +2 because col 0=Test No, col 1=Date
+                    if cell_idx < len(row.cells):
+                        cell = row.cells[cell_idx]
+                        for para in cell.paragraphs:
+                            for run in para.runs:
+                                run.text = "-"
+                                break
+                            else:
+                                if para.runs:
+                                    para.runs[0].text = "-"
+                                else:
+                                    para.add_run("-")
                             break
     
     # Determine if IX template
@@ -661,11 +708,17 @@ def create_consolidated_excel(
                 bio = safe_int(test_data.get('biology', 0))
                 total = safe_int(test_data.get('total', 0))
                 
-                worksheet.write(row, col, phy, cell_format)
-                worksheet.write(row, col + 1, chem, cell_format)
-                worksheet.write(row, col + 2, maths, cell_format)
-                worksheet.write(row, col + 3, bio, cell_format)
-                worksheet.write(row, col + 4, total, cell_format)
+                marks = [phy, chem, maths, bio, total]
+                if all(m == 0 for m in marks):
+                    display_marks = ["AB"] * 5
+                else:
+                    display_marks = marks
+                
+                worksheet.write(row, col, display_marks[0], cell_format)
+                worksheet.write(row, col + 1, display_marks[1], cell_format)
+                worksheet.write(row, col + 2, display_marks[2], cell_format)
+                worksheet.write(row, col + 3, display_marks[3], cell_format)
+                worksheet.write(row, col + 4, display_marks[4], cell_format)
                 
                 total_phy += phy
                 total_chem += chem
@@ -675,7 +728,7 @@ def create_consolidated_excel(
                 attended += 1
             else:
                 for i in range(5):
-                    worksheet.write(row, col + i, 0, cell_format)
+                    worksheet.write(row, col + i, "-", cell_format)
             
             col += 5
         
